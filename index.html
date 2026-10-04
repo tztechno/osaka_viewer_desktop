@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+    <meta name="theme-color" content="#14181f" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <title>Osaka 3D Viewer</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 32 32%22%3E%3Cpath d=%22M2 28 12 10l5 8 4-5 9 15z%22 fill=%22%234da3ff%22/%3E%3C/svg%3E" />
+    <script>window.CESIUM_BASE_URL = './cesium/';</script>
+  </head>
+  <body>
+    <div id="cesium"></div>
+
+    <div id="hud">
+      <div id="compass"><span id="compass-dir">N</span> <span id="compass-deg">0°</span></div>
+      <div id="coords"></div>
+    </div>
+
+    <button id="menu-btn" class="fab" aria-label="menu">☰</button>
+    <div id="quick">
+      <button id="q-locate" class="fab" title="">◎</button>
+      <button id="q-compass" class="fab" title="">🧭</button>
+      <button id="q-labels" class="fab" title="">A</button>
+      <button id="q-lang" class="fab">EN</button>
+    </div>
+
+    <aside id="panel" hidden>
+      <header><h1 data-t="title"></h1><button id="panel-close" aria-label="close">×</button></header>
+
+      <section>
+        <h2 data-t="labels"></h2>
+        <label class="row"><input type="checkbox" id="lbl-all" checked /> <span data-t="labels"></span></label>
+        <div class="chips">
+          <label><input type="checkbox" data-kind="p" checked /> <span data-t="peaks"></span></label>
+          <label><input type="checkbox" data-kind="l" checked /> <span data-t="landmarks"></span></label>
+          <label><input type="checkbox" data-kind="s" checked /> <span data-t="stations"></span></label>
+          <label><input type="checkbox" data-kind="f" checked /> <span data-t="facilities"></span></label>
+        </div>
+        <div class="seg" id="lang-seg"><button data-lang="ja">日本語</button><button data-lang="en">English</button></div>
+      </section>
+
+      <section>
+        <h2 data-t="viewpoint"></h2>
+        <div class="btns">
+          <button id="btn-locate" data-t="myLocation"></button>
+          <button id="btn-pick" data-t="pick"></button>
+          <button id="btn-overview" data-t="overview"></button>
+        </div>
+        <form id="goto">
+          <label><span data-t="lat"></span><input name="lat" inputmode="decimal" /></label>
+          <label><span data-t="lon"></span><input name="lon" inputmode="decimal" /></label>
+          <label><span data-t="eyeHeight"></span><input name="height" inputmode="decimal" value="1.6" /></label>
+          <div class="seg" id="height-ref"><button type="button" data-ref="agl" class="on" data-t="aglRef"></button><button type="button" data-ref="asl" data-t="aslRef"></button></div>
+          <output id="ground-elev"></output>
+          <label><span data-t="heading"></span><input name="heading" inputmode="decimal" /></label>
+          <output id="heading-hint"></output>
+          <button type="submit" class="primary" data-t="goto"></button>
+        </form>
+        <label class="row"><input type="checkbox" id="chk-compass" /> <span data-t="compass"></span></label>
+        <div class="row" id="calib" hidden><span data-t="calibrate"></span>
+          <button type="button" data-off="-5">−5°</button><button type="button" data-off="-1">−1°</button>
+          <output id="calib-val">0°</output>
+          <button type="button" data-off="1">+1°</button><button type="button" data-off="5">+5°</button>
+        </div>
+        <label class="row"><input type="checkbox" id="chk-gps" /> <span data-t="gps"></span></label>
+        <button id="btn-exit-look" hidden data-t="exitLook"></button>
+        <button id="btn-share" data-t="share"></button>
+      </section>
+
+      <section>
+        <h2 data-t="buildings"></h2>
+        <label class="row"><input type="checkbox" id="chk-bldg" checked /> <span data-t="buildings"></span></label>
+        <div class="seg" id="imagery-seg"><button data-img="photo" class="on" data-t="photo"></button><button data-img="map" data-t="map"></button></div>
+      </section>
+
+      <p class="help" data-t="help"></p>
+      <p class="credits">
+        DEM: osaka.tif · 3D buildings: <a href="https://www.mlit.go.jp/plateau/" target="_blank" rel="noopener">PLATEAU</a> (国土交通省) ·
+        Imagery: <a href="https://maps.gsi.go.jp/development/ichiran.html" target="_blank" rel="noopener">国土地理院</a> ·
+        Names: © <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors
+      </p>
+    </aside>
+
+    <div id="info" hidden></div>
+    <div id="toast" hidden></div>
+    <div id="look-badge" hidden data-t="lookMode"></div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
