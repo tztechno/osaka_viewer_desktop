@@ -1,11 +1,13 @@
-// Build public/data/labels/labels.json from OSM peaks/landmarks and PLATEAU building names.
-// Run after build-buildings.ts, build-terrain.ts and fetch-osm.ts.
+// Build public/data/labels/labels.json from OSM peaks/temples/landmarks and PLATEAU building names.
+// Run after build-buildings.ts, build-terrain.ts, fetch-osm.ts and build-osm-buildings.ts.
 //
-// Label kinds: p = peak, l = landmark (OSM), s = station, f = facility (PLATEAU gml:name)
+// Label kinds: p = peak, t = temple/shrine/castle (OSM, with a Wikipedia article or Wikidata item),
+// l = landmark (OSM), s = station, f = facility (PLATEAU gml:name)
 // Rank 1 = visible from far away, 3 = only nearby.
 import { readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadTemples, templeIndex } from './temples.ts';
 import Kuroshiro from 'kuroshiro';
 import KuromojiAnalyzer from 'kuroshiro-analyzer-kuromoji';
 
@@ -33,7 +35,8 @@ function maxAround(lat: number, lon: number, rad: number) {
 }
 
 // ---------- PLATEAU building index ----------
-const ib = readFileSync(B('bldg-index.bin'));
+// PLATEAU buildings plus the OSM buildings added in temple grounds and for towers
+const ib = Buffer.concat([readFileSync(B('bldg-index.bin')), readFileSync(B('osm-bldg-index.bin'))]);
 const idx = new Float64Array(ib.buffer, ib.byteOffset, ib.length / 8); // lat, lon, base, top
 const G = 0.001, grid = new Map<string, number[]>();
 for (let i = 0; i < idx.length / 4; i++) {
@@ -85,7 +88,7 @@ const TERMS: Record<string, string> = {
   大学: 'University', 短期大学: 'Junior College', 専門学校: 'Vocational School', 高等学校: 'High School', 中学校: 'Junior High School', 小学校: 'Elementary School', 学校: 'School', 学園: 'Gakuen', キャンパス: 'Campus',
   庁舎: 'Government Building', 区役所: 'Ward Office', 市役所: 'City Hall', 警察本部: 'Police Headquarters', 警察署: 'Police Station', 消防署: 'Fire Station', 消防局: 'Fire Department', 郵便局: 'Post Office', 税務署: 'Tax Office', 労働局: 'Labour Bureau', 裁判所: 'Court', 放送局: 'Broadcasting Station',
   美術館: 'Art Museum', 博物館: 'Museum', 資料館: 'Museum', 図書館: 'Library', 体育館: 'Gymnasium', 会館: 'Hall', 公会堂: 'Public Hall', 劇場: 'Theater', 水族館: 'Aquarium', 動物園: 'Zoo', 植物園: 'Botanical Garden',
-  公園: 'Park', 神社: 'Shrine', 天満宮: 'Tenmangu Shrine', 大社: 'Grand Shrine', 寺: 'Temple', 城: 'Castle', 天守閣: 'Main Tower', 大橋: 'Bridge', 古墳: 'Kofun', 遺跡: 'Site', 跡: 'Site',
+  公園: 'Park', 神社: 'Shrine', 天満宮: 'Tenmangu Shrine', 八幡宮: 'Hachimangu Shrine', 神宮: 'Jingu Shrine', 大社: 'Grand Shrine', 寺: 'Temple', 城: 'Castle', 天守閣: 'Main Tower', 大橋: 'Bridge', 古墳: 'Kofun', 遺跡: 'Site', 跡: 'Site',
   南館: 'South Wing', 北館: 'North Wing', 東館: 'East Wing', 西館: 'West Wing', 本館: 'Main Building', 新館: 'Annex', 別館: 'Annex',
   ビルディング: 'Building', ビル: 'Building', タワーズ: 'Towers', タワー: 'Tower', プラザ: 'Plaza', センター: 'Center', ホテル: 'Hotel', パーク: 'Park', シティ: 'City', スクエア: 'Square',
   ゲート: 'Gate', ガーデン: 'Garden', ベイ: 'Bay', ノース: 'North', サウス: 'South', イースト: 'East', ウエスト: 'West', ウェスト: 'West', ハウス: 'House', ホール: 'Hall', ワールド: 'World',
@@ -137,7 +140,8 @@ async function translate(name: string) {
 }
 
 // ---------- labels ----------
-interface Label { k: 'p' | 'l' | 's' | 'f'; ja: string; en: string; lat: number; lon: number; z: number; r: 1 | 2 | 3; e?: number }
+// g: temples only, 1 = Buddhist temple, 2 = Shinto shrine, 3 = other, 4 = castle; w: Wikipedia article ("ja:四天王寺")
+interface Label { k: 'p' | 't' | 'l' | 's' | 'f'; ja: string; en: string; lat: number; lon: number; z: number; r: 1 | 2 | 3; e?: number; g?: number; w?: string }
 const labels: Label[] = [];
 const r6 = (x: number) => Math.round(x * 1e6) / 1e6, r1 = (x: number) => Math.round(x * 10) / 10;
 const fixEn = (s: string) => s.replace(/^Mt\.(?=\S)/, 'Mt. ').replace(/^Mount /, 'Mt. ');
@@ -155,6 +159,24 @@ for (const e of json(B('osm/peaks.json')).elements) {
   labels.push({ k: 'p', ja: t.name, en, lat: r6(e.lat), lon: r6(e.lon), z: r1(Math.max(top.z, 0) + 2), r, e: Math.round(ele) });
 }
 const nPeaks = labels.length;
+
+// temples, shrines and castles: anchored on the tallest building in the grounds (main hall, pagoda, keep)
+const temples = loadTemples();
+for (const t of temples) {
+  let bi = -1;
+  if (t.rings.length) {
+    for (const i of bldgsIn(t.bbox[0], t.bbox[1], t.bbox[2], t.bbox[3]))
+      if (t.rings.some(r => pip(idx[4 * i], idx[4 * i + 1], r.map(p => ({ lat: p[0], lon: p[1] })))) && (bi < 0 || idx[4 * i + 3] > idx[4 * bi + 3])) bi = i;
+  } else bi = nearestBldg(t.lat, t.lon, 30);
+  const lat = bi >= 0 ? idx[4 * bi] : t.lat, lon = bi >= 0 ? idx[4 * bi + 1] : t.lon;
+  const z = bi >= 0 ? idx[4 * bi + 3] + 3 : groundAt(lat, lon) + 8;
+  const h = bi >= 0 ? idx[4 * bi + 3] - idx[4 * bi + 2] : 0;
+  const en = t.en || await translate(t.name);
+  // castles are landmarks seen from far away
+  labels.push({ k: 't', ja: t.name, en, lat: r6(lat), lon: r6(lon), z: r1(z), r: t.rel === 4 ? 1 : t.r, e: h ? Math.round(h) : undefined, g: t.rel, w: t.wikipedia || undefined });
+}
+const templeNames = new Set(temples.map(t => t.name));
+const templeAt = templeIndex(temples);
 
 // OSM landmarks and stations
 const osm = json(B('osm/landmarks.json')).elements as any[];
@@ -192,10 +214,17 @@ for (const e of osm) {
     continue;
   }
   if (GENERIC.test(name)) continue;
+  if (templeNames.has(name) || t.amenity === 'place_of_worship') continue;
   const notable = !!(t.wikidata || t.wikipedia);
-  const sight = !!(t.tourism || t.historic === 'castle' || t.man_made === 'tower');
+  // sightseeing spots (hotels and guest houses are not)
+  const sight = /^(attraction|museum|viewpoint|zoo|aquarium|theme_park|gallery)$/.test(t.tourism ?? '') || !!t.historic || t.leisure === 'garden' || t.man_made === 'tower';
   if (!(notable || h >= 60 || (sight && en))) continue;
-  const r: 1 | 2 | 3 = h >= 150 || (notable && sight) ? 1 : h >= 60 || notable ? 2 : 3;
+  // well-known sights are seen from far away; museums, tombs etc. from closer
+  const major = notable && (/^(attraction|zoo|aquarium|theme_park)$/.test(t.tourism ?? '') || /^(castle|palace)$/.test(t.historic ?? '') || t.man_made === 'tower');
+  let r: 1 | 2 | 3 = h >= 150 || major ? 1 : h >= 60 || notable ? 2 : 3;
+  // halls, turrets and gates inside temple and castle grounds only show nearby
+  const inTemple = templeAt(lat, lon);
+  if (inTemple) r = notable && name !== inTemple.name ? 3 : r === 1 ? 2 : 3;
   labels.push({ k: 'l', ja: name, en: en || await translate(name), lat: r6(lat), lon: r6(lon), z: r1(z), r, e: h ? Math.round(h) : undefined });
 }
 
@@ -218,4 +247,4 @@ for (const l of labels) if (!out.some(o => o.ja === l.ja && dist(o.lat, o.lon, l
 mkdirSync(join(ROOT, 'public/data/labels'), { recursive: true });
 writeFileSync(join(ROOT, 'public/data/labels/labels.json'), JSON.stringify(out));
 const count = (k: string) => out.filter(l => l.k === k).length;
-console.log(`labels: ${out.length} (peaks ${count('p')}/${nPeaks}, landmarks ${count('l')}, stations ${count('s')}, facilities ${count('f')}); rank1 ${out.filter(l => l.r === 1).length}`);
+console.log(`labels: ${out.length} (peaks ${count('p')}/${nPeaks}, temples ${count('t')}, landmarks ${count('l')}, stations ${count('s')}, facilities ${count('f')}); rank1 ${out.filter(l => l.r === 1).length}`);

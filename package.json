@@ -1,6 +1,6 @@
 {
   "name": "osaka_viewer_desktop",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Osaka 3D Viewer Desktop Application",
   "main": "index.js",
   "scripts": {
@@ -13,8 +13,9 @@
     "data:terrain": "node scripts/build-terrain.ts",
     "data:osm": "node scripts/fetch-osm.ts",
     "data:labels": "node scripts/build-labels.ts",
-    "data": "npm run data:buildings && npm run data:ground && npm run data:terrain && npm run data:osm && npm run data:labels",
-    "data:ground": "node scripts/build-ground.ts"
+    "data": "npm run data:osm && npm run data:buildings && npm run data:ground && npm run data:terrain && npm run data:osm-buildings && npm run data:labels",
+    "data:ground": "node scripts/build-ground.ts",
+    "data:osm-buildings": "node scripts/build-osm-buildings.ts"
   },
   "keywords": [],
   "author": "",

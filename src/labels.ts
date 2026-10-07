@@ -1,4 +1,4 @@
-// Name labels for peaks, landmarks, stations and facilities.
+// Name labels for peaks, temples/shrines, sights, stations and facilities.
 // Peak labels are drawn on top of everything; other labels are depth tested so
 // nearer buildings hide them. Visibility is also decided here:
 // distance limit by rank, a terrain line-of-sight test (with earth curvature), and
@@ -10,18 +10,21 @@ import {
 import type { Dem } from './terrain';
 import { getLang } from './i18n';
 
-export type Kind = 'p' | 'l' | 's' | 'f';
-export interface LabelData { k: Kind; ja: string; en: string; lat: number; lon: number; z: number; r: 1 | 2 | 3; e?: number }
+export type Kind = 'p' | 't' | 'l' | 's' | 'f';
+/** g (temples): 1 = Buddhist temple, 2 = Shinto shrine, 3 = other, 4 = castle; w: Wikipedia article, e.g. "ja:鹿苑寺" */
+export interface LabelData { k: Kind; ja: string; en: string; lat: number; lon: number; z: number; r: 1 | 2 | 3; e?: number; g?: number; w?: string }
 
 // Max display distance (m) per kind, indexed by rank-1.
 const MAX_DIST: Record<Kind, [number, number, number]> = {
   p: [160000, 50000, 12000],
+  t: [60000, 15000, 4500],
   l: [45000, 12000, 3500],
   s: [8000, 6000, 3000],
   f: [6000, 4000, 1500],
 };
 const COLORS: Record<Kind, Color> = {
   p: Color.fromCssColorString('#ffe08a'),
+  t: Color.fromCssColorString('#ffbe85'),
   l: Color.WHITE,
   s: Color.fromCssColorString('#a6e4ff'),
   f: Color.fromCssColorString('#e3e3e3'),
@@ -29,13 +32,15 @@ const COLORS: Record<Kind, Color> = {
 const MOBILE = matchMedia('(pointer: coarse)').matches;
 const FONT_PX = MOBILE ? [15, 13, 12] : [17, 15, 13];
 const MAX_VISIBLE = MOBILE ? 40 : 70;
+// temple labels: Buddhist temples orange, Shinto shrines vermilion, castles green
+const TEMPLE_COLORS = [COLORS.t, Color.fromCssColorString('#ffbe85'), Color.fromCssColorString('#ff8f7a'), Color.fromCssColorString('#e6c8ff'), Color.fromCssColorString('#a8e6c8')];
 
 interface Entry { d: LabelData; pos: Cartesian3; label: Label; px: number; w: number; h: number }
 
 export class Labels {
   private collection = new LabelCollection();
   private entries: Entry[] = [];
-  readonly enabled: Record<Kind, boolean> = { p: true, l: true, s: true, f: true };
+  readonly enabled: Record<Kind, boolean> = { p: true, t: true, l: true, s: true, f: true };
   private _all = true;
   private lastCam = new Cartesian3();
   private lastDir = new Cartesian3();
@@ -56,7 +61,7 @@ export class Labels {
         position: pos,
         text: '',
         font: `600 ${px}px "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Noto Sans JP", "Yu Gothic", sans-serif`,
-        fillColor: COLORS[d.k],
+        fillColor: d.k === 't' ? TEMPLE_COLORS[d.g ?? 0] : COLORS[d.k],
         outlineColor: Color.fromCssColorString('#111').withAlpha(0.9),
         outlineWidth: 3,
         style: LabelStyle.FILL_AND_OUTLINE,
@@ -73,6 +78,9 @@ export class Labels {
     }
     this.applyLang();
   }
+
+  /** Label data by kind and Japanese name. */
+  find(k: Kind, ja: string) { return this.entries.find((e) => e.d.k === k && e.d.ja === ja)?.d; }
 
   get all() { return this._all; }
   set all(v: boolean) { this._all = v; this.invalidate(); }

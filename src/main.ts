@@ -52,18 +52,30 @@ ssc.minimumZoomDistance = 1;
 (camera.frustum as PerspectiveFrustum).fov = CMath.toRadians(60);
 
 // ---------------- buildings ----------------
+// PLATEAU buildings, plus OSM buildings filling temple grounds PLATEAU lacks
 const tileset = await Cesium3DTileset.fromUrl('./data/bldg/tileset.json', {
   maximumScreenSpaceError: isMobile ? 24 : 16,
 });
-tileset.style = new Cesium3DTileStyle({
+const osmTileset = await Cesium3DTileset.fromUrl('./data/osmbldg/tileset.json', {
+  maximumScreenSpaceError: isMobile ? 24 : 16,
+});
+// t: 1 = temple, 2 = shrine, 3 = other place of worship, 4 = castle (see scripts/tiles.ts)
+const TEMPLE_CSS = ['', '#c9874f', '#e2583e', '#b9a3d6', '#6fa58c'];
+const buildingStyle = () => new Cesium3DTileStyle({
   color: {
     conditions: [
-      ["${name} !== ''", "color('#ffd9a0')"],
-      ['${h} >= 100', "color('#dfe8f5')"],
+      ['${t} === 1', `color('${TEMPLE_CSS[1]}')`],
+      ['${t} === 2', `color('${TEMPLE_CSS[2]}')`],
+      ['${t} === 3', `color('${TEMPLE_CSS[3]}')`],
+      ['${t} === 4', `color('${TEMPLE_CSS[4]}')`],
+      ["${name} !== ''", "color('#ffe2b0')"],
+      ['${h} >= 60', "color('#dfe8f5')"],
       ['true', "color('#f3f0ea')"],
     ],
   },
 });
+tileset.style = buildingStyle();
+osmTileset.style = buildingStyle();
 // simple architectural-model shading: ambient + sun diffuse, no PBR/IBL tint
 tileset.customShader = new CustomShader({
   lightingModel: LightingModel.UNLIT,
@@ -80,7 +92,9 @@ tileset.customShader = new CustomShader({
       material.diffuse *= 0.5 + 0.22 * sky + 0.38 * d;
     }`,
 });
+osmTileset.customShader = new CustomShader({ lightingModel: LightingModel.UNLIT, fragmentShaderText: tileset.customShader!.fragmentShaderText });
 scene.primitives.add(tileset);
+scene.primitives.add(osmTileset);
 
 // ---------------- labels ----------------
 const labels = new Labels(scene, dem);
@@ -111,7 +125,7 @@ function toast(msg: string) {
   toastTimer = window.setTimeout(() => (el.hidden = true), 3000);
 }
 
-interface BldgAttrs { id: string; s: number; u: string; addr: string }
+interface BldgAttrs { id: string; s: number; u: string; addr: string; tn: string }
 type InfoState = { kind: 'bldg'; f: Cesium3DTileFeature; a?: BldgAttrs } | { kind: 'label'; d: LabelData };
 
 // Per-feature details live next to each tile (<mesh>_{t,d}.json), fetched on demand.
@@ -124,7 +138,7 @@ async function buildingAttrs(f: Cesium3DTileFeature): Promise<BldgAttrs | undefi
   if (!p) { p = fetch(url).then((r) => r.json()); attrCache.set(url, p); }
   try {
     const cols = await p, i = f.featureId;
-    return { id: cols.id[i] as string, s: cols.s[i] as number, u: cols.u[i] as string, addr: cols.addr[i] as string };
+    return { id: cols.id[i] as string, s: cols.s[i] as number, u: cols.u[i] as string, addr: cols.addr[i] as string, tn: (cols.tn?.[i] as string) ?? '' };
   } catch { attrCache.delete(url); return undefined; }
 }
 function showBuilding(f: Cesium3DTileFeature) {
@@ -140,23 +154,32 @@ function showInfo(s: InfoState | undefined) {
   if (!s) { el.hidden = true; scene.requestRender(); return; }
   const esc = (x: unknown) => String(x ?? '').replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
   const rows: [string, string][] = [];
-  let title = '', sub = '';
+  let title = '', sub = '', link: LabelData | undefined;
+  const templeKind = (g?: number) => (g === 1 ? t('temple') : g === 2 ? t('shrine') : g === 4 ? t('castle') : t('worship'));
   if (s.kind === 'bldg') {
     const { f, a } = s;
     highlighted = f; f.color = Color.fromCssColorString('#ffb347');
-    title = f.getProperty('name') || (a && usageName(a.u)) || '—';
+    const temple = a?.tn ? labels.find('t', a.tn) : undefined;
+    const tName = temple ? (getLang() === 'ja' ? temple.ja : temple.en) : a?.tn;
+    title = f.getProperty('name') || (tName && (getLang() === 'ja' ? `${tName}の建物` : `Building at ${tName}`)) || (a && usageName(a.u)) || '—';
     sub = a ? [a.addr, a.id].filter(Boolean).join(' · ') : '…';
+    if (tName && f.getProperty('name')) rows.push([templeKind(f.getProperty('t')), tName]);
     if (f.getProperty('h')) rows.push([t('height'), `${f.getProperty('h')} m`]);
     if (a?.s) rows.push([t('storeys'), `${a.s}`]);
     if (a?.u) rows.push([t('usage'), usageName(a.u)]);
+    if (a?.id.startsWith('osm:')) rows.push([t('source'), t('srcOsm')]);
+    link = temple;
   } else {
     const d = s.d;
     title = getLang() === 'ja' ? d.ja : d.en;
     sub = getLang() === 'ja' ? d.en : d.ja;
-    if (d.e) rows.push([d.k === 'p' ? t('elevation') : t('height'), `${d.e} m`]);
+    if (d.k === 't') { sub = `${templeKind(d.g)}${d.r === 1 && d.g !== 4 ? ` · ${t('heritageWhc')}` : ''} · ${sub}`; link = d; }
+    if (d.e) rows.push([d.k === 'p' ? t('elevation') : d.k === 't' ? t('tallest') : t('height'), `${d.e} m`]);
     rows.push([t('lat') + ' / ' + t('lon'), `${d.lat.toFixed(5)}, ${d.lon.toFixed(5)}`]);
   }
-  el.innerHTML = `<h3>${esc(title)}</h3><div class="sub">${esc(sub)}</div><table>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>`;
+  const wiki = link?.w?.match(/^([a-z-]+):(.+)$/);
+  const wikiHtml = wiki ? `<a class="wiki" href="https://${wiki[1]}.wikipedia.org/wiki/${encodeURIComponent(wiki[2])}" target="_blank" rel="noopener">${esc(t('wikipedia'))}: ${esc(wiki[2])} ↗</a>` : '';
+  el.innerHTML = `<h3>${esc(title)}</h3><div class="sub">${esc(sub)}</div><table>${rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('')}</table>${wikiHtml}`;
   el.hidden = false;
   scene.requestRender();
 }
@@ -411,7 +434,7 @@ lblAll.addEventListener('change', () => { labels.all = lblAll.checked; syncLabel
 $('#q-labels').addEventListener('click', () => { labels.all = !labels.all; syncLabelsUi(); });
 document.querySelectorAll<HTMLInputElement>('[data-kind]').forEach((c) => c.addEventListener('change', () => labels.setKind(c.dataset.kind as Kind, c.checked)));
 
-($('#chk-bldg') as HTMLInputElement).addEventListener('change', (e) => { tileset.show = (e.target as HTMLInputElement).checked; scene.requestRender(); });
+($('#chk-bldg') as HTMLInputElement).addEventListener('change', (e) => { tileset.show = osmTileset.show = (e.target as HTMLInputElement).checked; scene.requestRender(); });
 document.querySelectorAll<HTMLButtonElement>('#imagery-seg button').forEach((b) => b.addEventListener('click', () => {
   photoLayer.show = b.dataset.img === 'photo';
   mapLayer.show = !photoLayer.show;
@@ -517,4 +540,4 @@ applyI18n();
 syncLabelsUi();
 if (!readHash()) setView(DEFAULT_VIEW);
 // expose for debugging in the console
-Object.assign(window, { viewer, dem, labels, tileset });
+Object.assign(window, { viewer, dem, labels, tileset, osmTileset });
