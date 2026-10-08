@@ -78,7 +78,24 @@ const READINGS: Record<string, string> = {
   十三: 'じゅうそう', 御幣島: 'みてじま', 柴島: 'くにじま', 野江: 'のえ', 蒲生: 'がもう', 今里: 'いまざと', 鶴橋: 'つるはし', 玉造: 'たまつくり',
   四天王寺: 'してんのうじ', 恵美須: 'えびす', 新世界: 'しんせかい', 南港: 'なんこう', 咲洲: 'さきしま', 舞洲: 'まいしま', 夢洲: 'ゆめしま',
   六甲: 'ろっこう', 生駒: 'いこま', 金剛: 'こんごう', 葛城: 'かつらぎ', 比叡: 'ひえい', 愛宕: 'あたご', 交野: 'かたの', 箕面: 'みのお',
+  // names with characters the dictionary does not know (readings from Wikipedia / OSM name:ja-Hira where available)
+  灯明: 'とうみょう', 船谷: 'ふなたに', 掃雲: 'そううん', 逢ヶ: 'おうが', 馳渡: 'かけわたり', 満灯: 'まんどう', 万灯: 'まんどう', 雨引: 'あまびき',
+  摩利支天: 'まりしてん', 金胎寺: 'こんたいじ', 胎金寺: 'たいこんじ', 靱本町: 'うつぼほんまち', 医専: 'いせん', 成蹊: 'せいけい', 新聞舗: 'しんぶんほ',
+  吾彦: 'あびこ', 思温: 'しおん', 偕星: 'かいせい', 海遊館: 'かいゆうかん', 止止呂支比売命: 'とどろきひめみこと', 花乃井: 'はなのい', 思斉: 'しせい',
+  応典院: 'おうてんいん', 金台: 'こんたい', 安楽: 'あんらく', 素盞嗚尊: 'すさのおのみこと', 貴布祢: 'きふね', 一乗: 'いちじょう', 長宝: 'ちょうほう',
+  方違: 'ほうちがい', 西証: 'さいしょう', 阿麻美許曽: 'あまみこそ', 発光院: 'ほっこういん', 市正: 'いちのかみ',
+  成蹊女子: 'せいけい じょし', 小林新聞舗: 'こばやし しんぶんほ', 万灯籠: 'まんとうろう', 広徳: 'こうとく', 広済: 'こうさい', 生国魂: 'いくくにたま',
 };
+// readings are keyed on the new character forms
+// old character forms (舊字體) that the dictionary does not know
+const OLD_FORMS: Record<string, string> = {
+  會: '会', 樂: '楽', 寶: '宝', 寳: '宝', 乘: '乗', 證: '証', 發: '発', 應: '応', 臺: '台', 舩: '船', 燈: '灯', 禰: '祢', 曾: '曽',
+  國: '国', 學: '学', 舊: '旧', 圓: '円', 廣: '広', 濱: '浜', 澤: '沢', 邊: '辺', 櫻: '桜', 縣: '県', 驛: '駅', 龍: '竜', 德: '徳', 齋: '斎', 齊: '斉',
+};
+const OLD_RE = new RegExp(`[${Object.keys(OLD_FORMS).join('')}]`, 'g');
+const JA_RE = /[぀-ヿ㐀-鿿]/;
+// OSM name:en sometimes holds a kana reading or a Japanese middle dot; ignore the former, clean the latter
+const osmEn = (s?: string) => { const v = (s ?? '').replace(/\s*[・･]\s*/g, ' ').trim(); return JA_RE.test(v) ? '' : v; };
 // Common words translated instead of romanized (longest match first).
 const TERMS: Record<string, string> = {
   株式会社: '', 有限会社: '', 本社: 'Head Office', 本店: 'Head Office', 支店: 'Branch', 支社: 'Branch', 営業所: 'Office', 事務所: 'Office', 出張所: 'Branch Office',
@@ -94,28 +111,52 @@ const TERMS: Record<string, string> = {
   ゲート: 'Gate', ガーデン: 'Garden', ベイ: 'Bay', ノース: 'North', サウス: 'South', イースト: 'East', ウエスト: 'West', ウェスト: 'West', ハウス: 'House', ホール: 'Hall', ワールド: 'World',
   スカイ: 'Sky', グランド: 'Grand', グラン: 'Grand', フロント: 'Front', ヒルズ: 'Hills', レジデンス: 'Residence', テラス: 'Terrace', クロス: 'Cross', ツイン: 'Twin', ステーション: 'Station',
   モール: 'Mall', オフィス: 'Office', スタジアム: 'Stadium', ドーム: 'Dome', アリーナ: 'Arena', ブリッジ: 'Bridge', ザ: 'The', エアポート: 'Airport', ターミナル: 'Terminal', マーケット: 'Market',
-  駅: 'Station',
+  駅: 'Station', 曲輪: 'Kuruwa Bailey', プレミスト: 'Premist',
 };
 const READING_LIST = Object.entries(READINGS).sort((a, b) => b[0].length - a[0].length);
 const TERM_RE = new RegExp(Object.keys(TERMS).sort((a, b) => b.length - a.length).join('|'), 'g');
 const cap = (s: string) => s.replace(/(^|[\s(-])([a-z])/g, (_, a, b) => a + b.toUpperCase());
+const toRomaji = async (s: string): Promise<string> => kuro.convert(s, { to: 'romaji', romajiSystem: 'hepburn' });
+// A hiragana reading comes out of the analyser garbled (じょう -> jiyou) and without macrons (とう -> tou), so after
+// converting the whole name as before, swap that reading's raw romaji for a clean one (katakana, long vowels shortened
+// like the macron-stripped kanji readings). The rest of the name keeps its context-dependent reading (天満橋 -> hashi).
+const readingFix = new Map<string, [string, string]>();
+async function fixReading(r: string, v: string) {
+  if (!readingFix.has(v)) {
+    const kata = v.replace(/[\u3041-\u3096]/g, c => String.fromCharCode(c.charCodeAt(0) + 0x60));
+    const raw = await toRomaji(v);
+    // keep n/m before b, m, p as the hiragana reading had it (Namba, Tenma)
+    let good = (await toRomaji(kata)).replace(/ou/g, 'o').replace(/uu/g, 'u');
+    if (!/m[bmp]/.test(raw)) good = good.replace(/m(?=[bmp])/g, 'n');
+    readingFix.set(v, [raw, good]);
+  }
+  const [raw, good] = readingFix.get(v)!;
+  return r.split(raw).join(good);
+}
 async function roma(s: string) {
   if (!s) return '';
   s = s.normalize('NFKC');
+  s = s.replace(OLD_RE, c => OLD_FORMS[c]);
   const parts: string[] = [];
   let last = 0;
   const flush = async (chunk: string) => {
     for (let piece of chunk.split(/[\s・･,、]+|(?=[()])|(?<=[()])/)) {
       if (!piece) continue;
       if (/^[\x00-\x7f]+$/.test(piece)) { parts.push(piece); continue; }
-      for (const [k, v] of READING_LIST) piece = piece.split(k).join(v);
-      const r: string = await kuro.convert(piece, { to: 'romaji', romajiSystem: 'hepburn' });
+      const used: string[] = [];
+      for (const [k, v] of READING_LIST) if (piece.includes(k)) { piece = piece.split(k).join(v); used.push(v); }
+      let r = await toRomaji(piece);
+      for (const v of used) r = await fixReading(r, v);
       parts.push(cap(r.normalize('NFD').replace(/[\u0300-\u036f]/g, '')));
     }
   };
+  // a one-character term inside a word with a known reading stays part of it (寺 in the peak name 金胎寺山)
+  const covered: [number, number][] = [];
+  for (const [k] of READING_LIST) for (let i = s.indexOf(k); i >= 0; i = s.indexOf(k, i + 1)) covered.push([i, i + k.length]);
   for (const m of s.matchAll(TERM_RE)) {
     // single-character terms only at the end of a word (e.g. 橋 in 天満橋 stays part of the name)
     if (m[0].length === 1 && m.index! + 1 < s.length && !/[\s・()]/.test(s[m.index! + 1])) continue;
+    if (m[0].length === 1 && covered.some(([b, e]) => b <= m.index! && m.index! < e)) continue;
     await flush(s.slice(last, m.index));
     if (TERMS[m[0]]) parts.push(TERMS[m[0]]);
     last = m.index! + m[0].length;
@@ -153,7 +194,7 @@ for (const e of json(B('osm/peaks.json')).elements) {
   if (top.z <= 0 && !t.ele) continue;
   const ele = Number.parseFloat(t.ele) || top.z;
   const base = t.name.replace(/(ヶ岳|ケ岳|が岳|岳|山|峰|嶺)$/, '');
-  const en = t['name:en'] ? fixEn(t['name:en']) : base === t.name ? await roma(t.name) : `Mt. ${await roma(base)}`;
+  const en = osmEn(t['name:en']) ? fixEn(osmEn(t['name:en'])) : base === t.name ? await roma(t.name) : `Mt. ${await roma(base)}`;
   let r: 1 | 2 | 3 = ele >= 600 ? 1 : ele >= 250 ? 2 : 3;
   if (t.wikidata && r > 1) r = (r - 1) as 1 | 2;
   labels.push({ k: 'p', ja: t.name, en, lat: r6(e.lat), lon: r6(e.lon), z: r1(Math.max(top.z, 0) + 2), r, e: Math.round(ele) });
@@ -171,7 +212,7 @@ for (const t of temples) {
   const lat = bi >= 0 ? idx[4 * bi] : t.lat, lon = bi >= 0 ? idx[4 * bi + 1] : t.lon;
   const z = bi >= 0 ? idx[4 * bi + 3] + 3 : groundAt(lat, lon) + 8;
   const h = bi >= 0 ? idx[4 * bi + 3] - idx[4 * bi + 2] : 0;
-  const en = t.en || await translate(t.name);
+  const en = osmEn(t.en) || await translate(t.name);
   // castles are landmarks seen from far away
   labels.push({ k: 't', ja: t.name, en, lat: r6(lat), lon: r6(lon), z: r1(z), r: t.rel === 4 ? 1 : t.r, e: h ? Math.round(h) : undefined, g: t.rel, w: t.wikipedia || undefined });
 }
@@ -191,7 +232,7 @@ for (const e of osm) {
   let lat = e.lat, lon = e.lon;
   if (ring?.length) { lat = ring.reduce((a, p) => a + p.lat, 0) / ring.length; lon = ring.reduce((a, p) => a + p.lon, 0) / ring.length; }
   if (lat == null) continue;
-  if (t['name:en']) (enByName.get(name) ?? enByName.set(name, []).get(name)!).push({ lat, lon, en: t['name:en'] });
+  if (osmEn(t['name:en'])) (enByName.get(name) ?? enByName.set(name, []).get(name)!).push({ lat, lon, en: osmEn(t['name:en']) });
 
   // height from PLATEAU: tallest building inside the polygon, else the nearest one
   let bi = -1;
@@ -202,7 +243,7 @@ for (const e of osm) {
   const h = bi >= 0 ? idx[4 * bi + 3] - idx[4 * bi + 2] : 0;
   if (bi >= 0 && (t.building || !ring)) { lat = idx[4 * bi]; lon = idx[4 * bi + 1]; }
   const z = bi >= 0 ? idx[4 * bi + 3] + 3 : groundAt(lat, lon) + 8;
-  const en = t['name:en'] ?? '';
+  const en = osmEn(t['name:en']);
 
   if (t.railway === 'station') {
     const prev = stations.get(name);
@@ -218,7 +259,8 @@ for (const e of osm) {
   const notable = !!(t.wikidata || t.wikipedia);
   // sightseeing spots (hotels and guest houses are not)
   const sight = /^(attraction|museum|viewpoint|zoo|aquarium|theme_park|gallery)$/.test(t.tourism ?? '') || !!t.historic || t.leisure === 'garden' || t.man_made === 'tower';
-  if (!(notable || h >= 60 || (sight && en))) continue;
+  // (a name:en that is only a kana reading still marks the sight as worth showing)
+  if (!(notable || h >= 60 || (sight && t['name:en']))) continue;
   // well-known sights are seen from far away; museums, tombs etc. from closer
   const major = notable && (/^(attraction|zoo|aquarium|theme_park)$/.test(t.tourism ?? '') || /^(castle|palace)$/.test(t.historic ?? '') || t.man_made === 'tower');
   let r: 1 | 2 | 3 = h >= 150 || major ? 1 : h >= 60 || notable ? 2 : 3;
@@ -243,6 +285,9 @@ for (const b of json(B('buildings-labels-raw.json'))) {
 labels.sort((a, b) => a.r - b.r || (b.e ?? 0) - (a.e ?? 0));
 const out: Label[] = [];
 for (const l of labels) if (!out.some(o => o.ja === l.ja && dist(o.lat, o.lon, l.lat, l.lon) < 300)) out.push(l);
+
+const leftover = out.filter(l => JA_RE.test(l.en));
+if (leftover.length) console.warn(`WARNING: ${leftover.length} English names still contain Japanese (add a reading to READINGS):\n` + leftover.map(l => `  ${l.ja} -> ${l.en}`).join('\n'));
 
 mkdirSync(join(ROOT, 'public/data/labels'), { recursive: true });
 writeFileSync(join(ROOT, 'public/data/labels/labels.json'), JSON.stringify(out));
