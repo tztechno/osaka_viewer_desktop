@@ -20,6 +20,7 @@
     <button id="menu-btn" class="fab" aria-label="menu">☰</button>
     <div id="quick">
       <button id="q-locate" class="fab" title="">◎</button>
+      <button id="q-spin" class="fab" title="">⟳</button>
       <button id="q-compass" class="fab" title="">🧭</button>
       <button id="q-labels" class="fab" title="">A</button>
       <button id="q-lang" class="fab">EN</button>
@@ -65,6 +66,11 @@
           <button type="button" data-off="1">+1°</button><button type="button" data-off="5">+5°</button>
         </div>
         <label class="row"><input type="checkbox" id="chk-gps" /> <span data-t="gps"></span></label>
+        <div class="row spin-row">
+          <button type="button" id="btn-spin" data-t="spin"></button>
+          <div class="seg" id="spin-seg"><button type="button" data-sec="60">60s</button><button type="button" data-sec="30" class="on">30s</button><button type="button" data-sec="15">15s</button></div>
+        </div>
+        <label class="row"><input type="checkbox" id="chk-spin-once" /> <span data-t="spinOnce"></span></label>
         <button id="btn-exit-look" hidden data-t="exitLook"></button>
         <button id="btn-share" data-t="share"></button>
       </section>

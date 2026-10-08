@@ -109,6 +109,7 @@ function applyI18n() {
   $('#q-lang').textContent = getLang() === 'ja' ? 'EN' : '日本';
   $('#q-locate').title = t('myLocation');
   $('#q-compass').title = t('compass');
+  syncSpinUi();
   $('#q-labels').title = t('labels');
   document.querySelectorAll<HTMLButtonElement>('#lang-seg button').forEach((b) => b.classList.toggle('on', b.dataset.lang === getLang()));
   labels.applyLang();
@@ -213,8 +214,47 @@ function setLook(on: boolean) {
   if (!on) {
     (camera.frustum as PerspectiveFrustum).fov = CMath.toRadians(60);
     if (follower.active) { follower.stop(); syncCompassUi(); }
+    setSpin(false);
   }
   scene.requestRender();
+}
+
+// ---------------- auto-rotate (360° panorama from the current eye) ----------------
+let spinning = false, spinSec = 30, spinLast = 0, spinTurned = 0;
+function setSpin(on: boolean) {
+  if (on === spinning) return;
+  spinning = on;
+  if (on) {
+    if (follower.active) { follower.stop(); syncCompassUi(); }
+    if (!look) {
+      // map mode: stay where the camera is, but look toward the horizon
+      const v = currentView();
+      aboveGround = Math.max(1, v.h - dem.heightNow(v.lon, v.lat));
+      if (v.pitch < -30) camera.setView({ orientation: { heading: camera.heading, pitch: CMath.toRadians(-10), roll: 0 } });
+      setLook(true);
+    }
+    spinTurned = 0;
+    spinLast = performance.now();
+    requestAnimationFrame(spinStep);
+  }
+  syncSpinUi();
+}
+function spinStep(now: number) {
+  if (!spinning) return;
+  const dt = Math.min(0.1, (now - spinLast) / 1000);
+  spinLast = now;
+  const d = (CMath.TWO_PI * dt) / spinSec;
+  spinTurned += d;
+  camera.setView({ orientation: { heading: camera.heading + d, pitch: camera.pitch, roll: 0 } });
+  scene.requestRender();
+  if (($('#chk-spin-once') as HTMLInputElement).checked && spinTurned >= CMath.TWO_PI) { setSpin(false); return; }
+  requestAnimationFrame(spinStep);
+}
+function syncSpinUi() {
+  $('#btn-spin').classList.toggle('on', spinning);
+  $('#btn-spin').textContent = t(spinning ? 'spinStop' : 'spin');
+  $('#q-spin').classList.toggle('on', spinning);
+  $('#q-spin').title = t(spinning ? 'spinStop' : 'spin');
 }
 
 /** Put the eye at lon/lat, `above` metres over the ground (or sea level), looking horizontally. */
@@ -235,6 +275,7 @@ const pointers = new Map<number, { x: number; y: number }>();
 let pinchDist = 0;
 canvas.addEventListener('pointerdown', (e) => {
   if (!look) return;
+  setSpin(false); // grabbing the view takes over from auto-rotate
   pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
   canvas.setPointerCapture(e.pointerId);
   if (pointers.size === 2) { const [a, b] = [...pointers.values()]; pinchDist = Math.hypot(a.x - b.x, a.y - b.y); }
@@ -366,6 +407,7 @@ function syncCompassUi() {
 }
 async function setCompass(on: boolean) {
   if (on) {
+    setSpin(false);
     if (!look) {
       // standing on the ground is the natural way to use the compass
       const v = currentView();
@@ -397,7 +439,7 @@ camera.changed.addEventListener(() => {
   hashTimer = window.setTimeout(() => {
     const v = currentView();
     const s = [v.lat.toFixed(6), v.lon.toFixed(6), v.h.toFixed(1), v.heading.toFixed(1), v.pitch.toFixed(1)].join(',');
-    history.replaceState(null, '', `#v=${s}${look ? '&look=1' : ''}`);
+    history.replaceState(null, '', `#v=${s}${look ? '&look=1' : ''}${spinning ? `&spin=${spinSec}` : ''}`);
     updateLatLonPlaceholders();
   }, 400);
 });
@@ -408,6 +450,8 @@ function readHash() {
   if (v?.length === 5 && v.every(Number.isFinite)) {
     setView({ lat: v[0], lon: v[1], h: v[2], heading: v[3], pitch: v[4] });
     if (p.get('look') === '1') { aboveGround = Math.max(1, v[2] - dem.heightNow(v[1], v[0])); setLook(true); }
+    const spin = Number(p.get('spin'));
+    if (spin > 0) { spinSec = spin; syncSpinSeg(); setSpin(true); }
     return true;
   }
   return false;
@@ -427,6 +471,10 @@ $('#q-compass').addEventListener('click', () => void setCompass(!follower.active
 $('#btn-pick').addEventListener('click', () => setPicking(!picking));
 $('#btn-overview').addEventListener('click', () => { setLook(false); setView(DEFAULT_VIEW, true); });
 $('#btn-exit-look').addEventListener('click', () => setLook(false));
+$('#btn-spin').addEventListener('click', () => { setSpin(!spinning); if (isMobile && spinning) panel.hidden = true; });
+$('#q-spin').addEventListener('click', () => setSpin(!spinning));
+function syncSpinSeg() { document.querySelectorAll<HTMLButtonElement>('#spin-seg button').forEach((b) => b.classList.toggle('on', Number(b.dataset.sec) === spinSec)); }
+document.querySelectorAll<HTMLButtonElement>('#spin-seg button').forEach((b) => b.addEventListener('click', () => { spinSec = Number(b.dataset.sec); syncSpinSeg(); }));
 
 const lblAll = $('#lbl-all') as HTMLInputElement;
 const syncLabelsUi = () => { lblAll.checked = labels.all; $('#q-labels').classList.toggle('on', labels.all); };

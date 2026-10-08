@@ -26,6 +26,10 @@ input:not([type]) , input[inputmode] { font: inherit; width: 100%; box-sizing: b
 #quick { position: fixed; right: 12px; bottom: calc(var(--bottom) + 40px); display: flex; flex-direction: column; gap: 10px; z-index: 10; }
 #q-lang { font-size: 13px; font-weight: 700; }
 #q-labels { font-weight: 700; }
+#q-spin { font-size: 22px; }
+.spin-row .seg { margin: 0; }
+.spin-row .seg button { padding: 4px 8px; }
+#btn-spin.on { background: var(--accent); border-color: var(--accent); }
 
 #hud { position: fixed; top: calc(var(--top) + 12px); left: 50%; transform: translateX(-50%); z-index: 5; text-align: center; pointer-events: none; }
 #compass { display: inline-block; background: var(--bg); padding: 5px 14px; border-radius: 16px; font-weight: 700; font-variant-numeric: tabular-nums; }

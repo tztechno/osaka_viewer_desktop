@@ -1,6 +1,6 @@
 [package]
 name = "osaka-viewer"
-version = "1.1.0"
+version = "1.2.0"
 description = "Osaka 3D Viewer Desktop Application"
 authors = ["tztechno"]
 license = ""
